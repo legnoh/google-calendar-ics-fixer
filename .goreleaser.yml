@@ -31,11 +31,6 @@ brews:
       {{ .Env.DESCRIPTION }}
     license: MIT
     skip_upload: auto
-    service: |
-      run [opt_bin/"{{ .ProjectName }}", "serve"]
-      keep_alive true
-      log_path var/"log/{{ .ProjectName }}.log"
-      error_log_path var/"log/{{ .ProjectName }}.log"
     test: |
       system "#{bin}/{{ .ProjectName }} --help"
     repository:
