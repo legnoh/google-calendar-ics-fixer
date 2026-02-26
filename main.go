@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"html"
-	"io"
+	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -46,8 +46,10 @@ func getPropValue(e *ics.VEvent, prop ics.ComponentProperty) (string, bool) {
 }
 
 func main() {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
 	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "Usage: google-calendar-ics-fixer <input.ics> <output.ics>")
+		logger.Error("invalid arguments", "usage", "google-calendar-ics-fixer <input.ics> <output.ics>")
 		os.Exit(2)
 	}
 	inPath := os.Args[1]
@@ -55,13 +57,13 @@ func main() {
 
 	in, err := os.ReadFile(inPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "read:", err)
+		logger.Error("failed to read input", "path", inPath, "err", err)
 		os.Exit(1)
 	}
 
 	cal, err := ics.ParseCalendar(bytes.NewReader(in))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "parse:", err)
+		logger.Error("failed to parse calendar", "path", inPath, "err", err)
 		os.Exit(1)
 	}
 
@@ -100,9 +102,9 @@ func main() {
 	)
 
 	if err := os.WriteFile(outPath, []byte(out), 0644); err != nil {
-		fmt.Fprintln(os.Stderr, "write:", err)
+		logger.Error("failed to write output", "path", outPath, "err", err)
 		os.Exit(1)
 	}
 
-	io.WriteString(os.Stderr, fmt.Sprintf("Done. events=%d, recurrencePropsRemoved=%d\n", len(events), recurrenceRemoved))
+	logger.Info("done", "events", len(events), "recurrencePropsRemoved", recurrenceRemoved, "output", outPath)
 }
