@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Run GoReleaser Build
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          args: build --snapshot
+        env:
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          DESCRIPTION: |
+            google calendar ics fixer
+          HOMEBREW_REPO_NAME: homebrew-etc
+
+  publish:
+    needs: build
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # for tagging
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Bump version & Tagging
+        uses: anothrNick/github-tag-action@1.75.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DEFAULT_BUMP: patch
+
+      - name: Get GitHub App Token(for all repositories)
+        uses: actions/create-github-app-token@v2
+        id: github-app
+        with:
+          app-id: ${{ vars.G_BUMP_BOT_ID }}
+          private-key: ${{ secrets.G_BUMP_BOT_PRIVATEKEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Build & Create GitHub Release & Update Homebrew Formula
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ steps.github-app.outputs.token }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          DESCRIPTION: |
+            google calendar ics fixer
+          HOMEBREW_REPO_NAME: homebrew-etc
