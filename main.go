@@ -2,15 +2,13 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/hex"
+	"encoding/base64"
 	"fmt"
 	"html"
 	"log/slog"
 	"os"
 	"regexp"
 	"strings"
-	"time"
 
 	ics "github.com/arran4/golang-ical"
 )
@@ -20,12 +18,45 @@ var (
 	reTag = regexp.MustCompile(`<[^>]+>`)
 )
 
-func newUID(index int) string {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("%d-%d@calendar.lkj.io", time.Now().UnixNano(), index)
+func normalizeUIDValue(propName string, value string) string {
+	value = strings.TrimSpace(value)
+	switch propName {
+	case string(ics.ComponentPropertySummary), string(ics.ComponentPropertyDescription), string(ics.ComponentPropertyLocation):
+		value = strings.ReplaceAll(value, "\r", "")
+		if strings.Contains(value, "<") {
+			return stripHTMLish(value)
+		}
+		return value
 	}
-	return fmt.Sprintf("%d-%s-%d@calendar.lkj.io", time.Now().UnixNano(), hex.EncodeToString(b), index)
+	return strings.ReplaceAll(value, "\r", "")
+}
+
+func stableUID(e *ics.VEvent) string {
+	startAt, _ := getPropValue(e, ics.ComponentPropertyDtStart)
+	endAt, _ := getPropValue(e, ics.ComponentPropertyDtEnd)
+	summary, _ := getPropValue(e, ics.ComponentPropertySummary)
+
+	source := strings.Join([]string{
+		normalizeUIDValue(string(ics.ComponentPropertyDtStart), startAt),
+		normalizeUIDValue(string(ics.ComponentPropertyDtEnd), endAt),
+		normalizeUIDValue(string(ics.ComponentPropertySummary), summary),
+	}, "|")
+
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(source))
+	return fmt.Sprintf("%s@calendar.lkj.io", encoded)
+}
+
+func dedupeUID(uid string, seen map[string]int) string {
+	seen[uid]++
+	if seen[uid] == 1 {
+		return uid
+	}
+
+	localPart, domain, found := strings.Cut(uid, "@")
+	if !found {
+		return fmt.Sprintf("%s-%d", uid, seen[uid])
+	}
+	return fmt.Sprintf("%s-%d@%s", localPart, seen[uid], domain)
 }
 
 func stripHTMLish(s string) string {
@@ -68,6 +99,7 @@ func main() {
 	}
 
 	events := cal.Events()
+	seenUIDs := make(map[string]int, len(events))
 	recurrenceProps := []ics.ComponentProperty{
 		ics.ComponentPropertyRrule,
 		ics.ComponentPropertyRdate,
@@ -77,9 +109,9 @@ func main() {
 	}
 
 	recurrenceRemoved := 0
-	for i, e := range events {
-		// UID は必ず新規採番
-		e.ReplaceProperty(ics.ComponentPropertyUniqueId, newUID(i))
+	for _, e := range events {
+		// UID はイベント内容から一貫して生成する
+		e.ReplaceProperty(ics.ComponentPropertyUniqueId, dedupeUID(stableUID(e), seenUIDs))
 
 		// RRULE など繰り返し関連プロパティは無視（削除）
 		for _, prop := range recurrenceProps {
