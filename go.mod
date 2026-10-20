@@ -2,4 +2,4 @@ module github.com/legnoh/google-calendar-ics-fixer
 
 go 1.27.3
 
-require github.com/arran4/golang-ical v0.3.7
+require github.com/arran4/golang-ical v0.3.8
